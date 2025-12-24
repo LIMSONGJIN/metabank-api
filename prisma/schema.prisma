@@ -1,0 +1,236 @@
+// Prisma Schema for Metabank API
+// Usage tracking for multi-client system
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== Core Models =====
+
+model User {
+  id            String      @id @default(uuid())
+  email         String?     @unique
+  phoneNumber   String?     @unique
+  name          String?
+  profileImage  String?
+  password      String?     // hashed password
+  
+  provider      AuthProvider @default(LOCAL)
+  providerId    String?
+  
+  // Role-based access control
+  role          UserRole    @default(USER)
+  
+  // Relationships
+  usageLogs     UsageLog[]
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  @@index([email])
+  @@index([phoneNumber])
+  @@index([role])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  KAKAO
+  GOOGLE
+  APPLE
+}
+
+enum ClientType {
+  KIOSK
+  BOGOFIT_APP
+  SHOPPING_MALL_WEB
+  BEAUTY_FIT
+}
+
+enum FeatureType {
+  VIRTUAL_FITTING
+  MAKEUP
+  HAIR_FITTING
+  VIDEO_GENERATION
+}
+
+// ===== Usage Logging =====
+
+model UsageLog {
+  id              String      @id @default(uuid())
+  
+  // User info
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id])
+  
+  // Client & Feature
+  clientType      ClientType
+  featureType     FeatureType
+  
+  // Session info
+  sessionId       String?     // Optional: for grouping related logs
+  
+  // Metadata (flexible JSON for different features)
+  metadata        Json?       // Store feature-specific data
+  
+  // Request info
+  ipAddress       String?
+  userAgent       String?
+  
+  // Timestamps
+  createdAt       DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([clientType])
+  @@index([featureType])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+// ===== Kiosk Management =====
+
+model KioskDevice {
+  id              String      @id @default(uuid())
+  deviceId        String      @unique
+  location        String?
+  status          KioskStatus @default(ACTIVE)
+  
+  sessions        KioskSession[]
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  @@index([deviceId])
+  @@index([status])
+}
+
+enum KioskStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+model KioskSession {
+  id              String      @id @default(uuid())
+  
+  kioskId         String
+  kiosk           KioskDevice @relation(fields: [kioskId], references: [id])
+  
+  sessionToken    String      @unique
+  userId          String?
+  
+  startedAt       DateTime    @default(now())
+  endedAt         DateTime?
+  
+  @@index([kioskId])
+  @@index([sessionToken])
+  @@index([startedAt])
+}
+
+// ===== Feature-Specific Models (Optional, for storing results) =====
+
+model VirtualFittingResult {
+  id              String      @id @default(uuid())
+  
+  userId          String?
+  clientType      ClientType
+  
+  // Input/Output URLs (you can add AI processing later)
+  poseImageUrl    String
+  resultImageUrl  String?
+  
+  // Metadata
+  engine          String?     // v1, v2, v3, etc.
+  items           Json?       // Array of items used
+  
+  // Relationship to videos
+  videos          VideoGenerationResult[]
+  
+  createdAt       DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([clientType])
+}
+
+model MakeupResult {
+  id              String      @id @default(uuid())
+  
+  userId          String?
+  clientType      ClientType
+  
+  originalImageUrl String
+  resultImageUrl  String?
+  
+  style           String?     // natural, glamorous, etc.
+  
+  createdAt       DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([clientType])
+}
+
+model HairFittingResult {
+  id              String      @id @default(uuid())
+  
+  userId          String?
+  clientType      ClientType
+  
+  originalImageUrl String
+  resultImageUrl  String?
+  
+  hairStyle       String?
+  hairColor       String?
+  
+  createdAt       DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([clientType])
+}
+
+// ===== Video Generation =====
+
+model VideoGenerationResult {
+  id                      String      @id @default(uuid())
+  
+  userId                  String?
+  clientType              ClientType
+  
+  // Reference to the virtual fitting result
+  virtualFittingResultId  String
+  virtualFittingResult    VirtualFittingResult @relation(fields: [virtualFittingResultId], references: [id], onDelete: Cascade)
+  
+  // Video output
+  videoUrl                String?
+  thumbnailUrl            String?
+  
+  // Video settings
+  duration                Int?        // in seconds
+  style                   String?     // animation style, transition type, etc.
+  
+  // Processing status
+  status                  VideoStatus @default(PROCESSING)
+  
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+  
+  @@index([userId])
+  @@index([clientType])
+  @@index([virtualFittingResultId])
+  @@index([status])
+}
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
